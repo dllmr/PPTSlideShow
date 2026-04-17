@@ -1,0 +1,27 @@
+# Generated output
+slideshow.pptx
+
+# User preferences (per-folder, not meant to be shared)
+slideshow.toml
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.python-version
+
+# uv
+uv.lock
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
