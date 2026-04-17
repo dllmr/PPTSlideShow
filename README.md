@@ -1,6 +1,6 @@
 # PPTSlideShow
 
-A single-file Python script that builds a looping PowerPoint slideshow from a folder of images. One slide per image (recursive), sized to fill the slide without clipping, centred on a black background, with automatic slide advance.
+A single-file Python script that builds a looping PowerPoint slideshow from a folder of images. One slide per image, sized to fill the slide without clipping, centred on a black background, with automatic slide advance.
 
 The output plays in both PowerPoint and LibreOffice Impress on Windows, macOS, and Linux.
 
@@ -20,7 +20,8 @@ This produces `slideshow.pptx` alongside your images. By default:
 
 - 10 seconds per slide
 - Loops continuously
-- Images are **linked** (not embedded) using relative paths — the PPTX must stay at the root of the image tree when opened
+- Images from the current folder only (subfolders ignored)
+- Images are **embedded** in the PPTX (self-contained, portable)
 - No transition effect between slides
 
 ### Interactive mode
@@ -33,8 +34,9 @@ Prompts for:
 
 1. Slide duration (seconds)
 2. Loop on/off
-3. Embed vs link images
+3. Embed vs link images (linking keeps the PPTX small but requires the PPTX to stay at the root of the image tree when opened)
 4. Fade transition on/off (fixed 0.5s duration)
+5. Include images from subfolders
 
 The chosen values are written to `slideshow.toml` in the same folder and become the defaults for subsequent runs (both interactive and non-interactive). Delete the file to reset to factory defaults.
 

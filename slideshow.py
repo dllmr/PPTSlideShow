@@ -39,7 +39,8 @@ FADE_MS = 500
 OUT_NAME = "slideshow.pptx"
 CONFIG_NAME = "slideshow.toml"
 
-DEFAULTS = {"duration": 10.0, "loop": True, "embed": False, "fade": False}
+DEFAULTS = {"duration": 10.0, "loop": True, "embed": True, "fade": False,
+            "recursive": False}
 
 
 def load_config(path: Path) -> dict:
@@ -57,26 +58,30 @@ def load_config(path: Path) -> dict:
             cfg[key] = loaded[key]
     if not isinstance(cfg["duration"], (int, float)) or cfg["duration"] <= 0:
         cfg["duration"] = DEFAULTS["duration"]
-    for key in ("loop", "embed", "fade"):
+    for key in ("loop", "embed", "fade", "recursive"):
         if not isinstance(cfg[key], bool):
             cfg[key] = DEFAULTS[key]
     return cfg
 
 
 def save_config(path: Path, duration: float, loop: bool,
-                embed: bool, fade: bool) -> None:
+                embed: bool, fade: bool, recursive: bool) -> None:
+    def b(v: bool) -> str:
+        return "true" if v else "false"
     body = (
         f"duration = {duration}\n"
-        f"loop = {'true' if loop else 'false'}\n"
-        f"embed = {'true' if embed else 'false'}\n"
-        f"fade = {'true' if fade else 'false'}\n"
+        f"loop = {b(loop)}\n"
+        f"embed = {b(embed)}\n"
+        f"fade = {b(fade)}\n"
+        f"recursive = {b(recursive)}\n"
     )
     path.write_text(body)
 
 
-def find_images(root: Path, exclude: Path) -> list[Path]:
+def find_images(root: Path, exclude: Path, recursive: bool) -> list[Path]:
     results = []
-    for p in root.rglob("*"):
+    iterator = root.rglob("*") if recursive else root.glob("*")
+    for p in iterator:
         if not p.is_file():
             continue
         if p.suffix.lower() not in IMAGE_EXTS:
@@ -235,7 +240,7 @@ def _yesno(prompt: str, default: bool) -> bool:
     return raw in ("y", "yes")
 
 
-def prompt_interactive(defaults: dict) -> tuple[float, bool, bool, bool]:
+def prompt_interactive(defaults: dict) -> tuple[float, bool, bool, bool, bool]:
     d_dur = defaults["duration"]
     dur_str = f"{d_dur:g}"
     while True:
@@ -250,7 +255,8 @@ def prompt_interactive(defaults: dict) -> tuple[float, bool, bool, bool]:
     loop = _yesno("Loop the presentation?", defaults["loop"])
     embed = _yesno("Embed images instead of linking?", defaults["embed"])
     fade = _yesno("Fade transition between slides?", defaults["fade"])
-    return secs, loop, embed, fade
+    recursive = _yesno("Include images from subfolders?", defaults["recursive"])
+    return secs, loop, embed, fade, recursive
 
 
 def main() -> int:
@@ -269,10 +275,11 @@ def main() -> int:
     loop: bool = cfg["loop"]
     embed: bool = cfg["embed"]
     fade: bool = cfg["fade"]
+    recursive: bool = cfg["recursive"]
     if args.interactive:
-        duration, loop, embed, fade = prompt_interactive(cfg)
-        save_config(config_path, duration, loop, embed, fade)
-    images = find_images(root, out_path)
+        duration, loop, embed, fade, recursive = prompt_interactive(cfg)
+        save_config(config_path, duration, loop, embed, fade, recursive)
+    images = find_images(root, out_path, recursive)
     if not images:
         print("No images found.", file=sys.stderr)
         return 1
@@ -312,8 +319,10 @@ def main() -> int:
     prs.save(out_path)
     mode = "embedded" if embed else "linked"
     trans = "fade" if fade else "cut"
+    scope = "recursive" if recursive else "flat"
     print(f"Wrote {out_path.name} — {len(prs.slides)} slides, "
-          f"{duration}s each, loop={loop}, images {mode}, transition {trans}.")
+          f"{duration}s each, loop={loop}, images {mode}, "
+          f"transition {trans}, scope {scope}.")
     return 0
 
 
