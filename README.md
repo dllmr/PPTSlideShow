@@ -21,7 +21,7 @@ This produces `slideshow.pptx` alongside your images. By default:
 - 10 seconds per slide
 - Loops continuously
 - Images from the current folder only (subfolders ignored)
-- Images are **embedded** in the PPTX (self-contained, portable)
+- Images are **embedded** in the PPTX (self-contained, portable) and downscaled to fit within **1920×1080** to keep file size reasonable
 - No transition effect between slides
 
 ### Interactive mode
@@ -37,8 +37,20 @@ Prompts for:
 3. Embed vs link images (linking keeps the PPTX small but requires the PPTX to stay at the root of the image tree when opened)
 4. Fade transition on/off (fixed 0.5s duration)
 5. Include images from subfolders
+6. Downscale embedded images (`1080p`, `720p`, `480p`, or `none`). Only applies when embedding; linked images are never modified. Images already within the cap are embedded unchanged; larger ones are resized preserving aspect ratio and re-encoded as JPEG (for JPEG sources) or PNG (otherwise).
 
 The chosen values are written to `slideshow.toml` in the same folder and become the defaults for subsequent runs (both interactive and non-interactive). Delete the file to reset to factory defaults.
+
+You can also edit `slideshow.toml` directly. All keys are optional; missing keys fall back to the built-in defaults:
+
+```toml
+duration = 10.0          # seconds per slide (positive number)
+loop = true              # loop when the presentation ends
+embed = true             # true = embed images, false = link them
+fade = false             # fade transition between slides (fixed 0.5s)
+recursive = false        # include images from subfolders
+scale = "1080p"          # "1080p", "720p", "480p", or "none" (embed only)
+```
 
 ### Supported image formats
 

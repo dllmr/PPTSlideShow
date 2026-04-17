@@ -40,7 +40,14 @@ OUT_NAME = "slideshow.pptx"
 CONFIG_NAME = "slideshow.toml"
 
 DEFAULTS = {"duration": 10.0, "loop": True, "embed": True, "fade": False,
-            "recursive": False}
+            "recursive": False, "scale": "1080p"}
+
+SCALE_CAPS: dict[str, tuple[int, int] | None] = {
+    "1080p": (1920, 1080),
+    "720p": (1280, 720),
+    "480p": (854, 480),
+    "none": None,
+}
 
 
 def load_config(path: Path) -> dict:
@@ -61,11 +68,13 @@ def load_config(path: Path) -> dict:
     for key in ("loop", "embed", "fade", "recursive"):
         if not isinstance(cfg[key], bool):
             cfg[key] = DEFAULTS[key]
+    if cfg["scale"] not in SCALE_CAPS:
+        cfg["scale"] = DEFAULTS["scale"]
     return cfg
 
 
-def save_config(path: Path, duration: float, loop: bool,
-                embed: bool, fade: bool, recursive: bool) -> None:
+def save_config(path: Path, duration: float, loop: bool, embed: bool,
+                fade: bool, recursive: bool, scale: str) -> None:
     def b(v: bool) -> str:
         return "true" if v else "false"
     body = (
@@ -74,6 +83,7 @@ def save_config(path: Path, duration: float, loop: bool,
         f"embed = {b(embed)}\n"
         f"fade = {b(fade)}\n"
         f"recursive = {b(recursive)}\n"
+        f'scale = "{scale}"\n'
     )
     path.write_text(body)
 
@@ -201,6 +211,27 @@ def set_loop(prs) -> None:
     )
 
 
+def scaled_image(path: Path, cap: tuple[int, int] | None) -> tuple[BytesIO, int, int]:
+    """Return (buffer, width, height). Re-encodes only when the image exceeds cap."""
+    with Image.open(path) as im:
+        iw, ih = im.size
+        fmt = (im.format or "").upper()
+        if cap is None or (iw <= cap[0] and ih <= cap[1]):
+            return BytesIO(path.read_bytes()), iw, ih
+        im.thumbnail(cap, Image.LANCZOS)
+        iw, ih = im.size
+        save_fmt = "JPEG" if fmt == "JPEG" else "PNG"
+        if save_fmt == "JPEG" and im.mode != "RGB":
+            im = im.convert("RGB")
+        buf = BytesIO()
+        if save_fmt == "JPEG":
+            im.save(buf, format="JPEG", quality=88, optimize=True)
+        else:
+            im.save(buf, format="PNG", optimize=True)
+        buf.seek(0)
+        return buf, iw, ih
+
+
 def build_thumbnail(first_img: Path, width: int = 320, height: int = 180) -> bytes:
     canvas = Image.new("RGB", (width, height), "black")
     with Image.open(first_img) as im:
@@ -240,7 +271,22 @@ def _yesno(prompt: str, default: bool) -> bool:
     return raw in ("y", "yes")
 
 
-def prompt_interactive(defaults: dict) -> tuple[float, bool, bool, bool, bool]:
+def _choice(prompt: str, options: list[str], default: str) -> str:
+    opts = "/".join(options)
+    while True:
+        raw = input(f"{prompt} [{opts}] [{default}]: ").strip().lower()
+        if not raw:
+            return default
+        if raw in options:
+            return raw
+        if raw.isdigit():
+            i = int(raw) - 1
+            if 0 <= i < len(options):
+                return options[i]
+        print(f"Please pick one of: {', '.join(options)}")
+
+
+def prompt_interactive(defaults: dict) -> tuple[float, bool, bool, bool, bool, str]:
     d_dur = defaults["duration"]
     dur_str = f"{d_dur:g}"
     while True:
@@ -256,7 +302,12 @@ def prompt_interactive(defaults: dict) -> tuple[float, bool, bool, bool, bool]:
     embed = _yesno("Embed images instead of linking?", defaults["embed"])
     fade = _yesno("Fade transition between slides?", defaults["fade"])
     recursive = _yesno("Include images from subfolders?", defaults["recursive"])
-    return secs, loop, embed, fade, recursive
+    if embed:
+        scale = _choice("Downscale embedded images to",
+                        list(SCALE_CAPS.keys()), defaults["scale"])
+    else:
+        scale = defaults["scale"]
+    return secs, loop, embed, fade, recursive, scale
 
 
 def main() -> int:
@@ -276,9 +327,11 @@ def main() -> int:
     embed: bool = cfg["embed"]
     fade: bool = cfg["fade"]
     recursive: bool = cfg["recursive"]
+    scale: str = cfg["scale"]
     if args.interactive:
-        duration, loop, embed, fade, recursive = prompt_interactive(cfg)
-        save_config(config_path, duration, loop, embed, fade, recursive)
+        duration, loop, embed, fade, recursive, scale = prompt_interactive(cfg)
+        save_config(config_path, duration, loop, embed, fade, recursive, scale)
+    cap = SCALE_CAPS[scale]
     images = find_images(root, out_path, recursive)
     if not images:
         print("No images found.", file=sys.stderr)
@@ -295,15 +348,19 @@ def main() -> int:
         set_black_background(slide)
 
         try:
-            with Image.open(img_path) as im:
-                iw, ih = im.size
+            if embed:
+                img_data, iw, ih = scaled_image(img_path, cap)
+            else:
+                with Image.open(img_path) as im:
+                    iw, ih = im.size
+                img_data = None
         except Exception as e:
             print(f"Skipping {img_path}: {e}", file=sys.stderr)
             continue
 
         left, top, w, h = compute_fit(iw, ih, slide_w, slide_h)
         if embed:
-            slide.shapes.add_picture(str(img_path), Emu(left), Emu(top),
+            slide.shapes.add_picture(img_data, Emu(left), Emu(top),
                                      width=Emu(w), height=Emu(h))
         else:
             rel = img_path.relative_to(root).as_posix()
@@ -318,9 +375,17 @@ def main() -> int:
 
     prs.save(out_path)
     mode = "embedded" if embed else "linked"
+    if embed:
+        mode = f"{mode} ({scale})"
     trans = "fade" if fade else "cut"
     scope = "recursive" if recursive else "flat"
-    print(f"Wrote {out_path.name} — {len(prs.slides)} slides, "
+    size = out_path.stat().st_size
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            size_str = f"{size:.1f} {unit}" if unit != "B" else f"{size} B"
+            break
+        size /= 1024
+    print(f"Wrote {out_path.name} ({size_str}) — {len(prs.slides)} slides, "
           f"{duration}s each, loop={loop}, images {mode}, "
           f"transition {trans}, scope {scope}.")
     return 0
