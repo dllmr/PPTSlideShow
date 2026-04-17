@@ -1,9 +1,9 @@
 # /// script
-# requires-python = ">=3.11"
+# requires-python = ">=3.12"
 # dependencies = [
 #     "python-pptx>=1.0",
-#     "Pillow>=10.0",
-#     "lxml>=4.9",
+#     "Pillow>=12.2",
+#     "lxml>=6.0",
 # ]
 # ///
 """Build a looping slideshow.pptx from images found recursively in the cwd.
